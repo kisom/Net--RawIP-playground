@@ -27,12 +27,12 @@ my $pkt = Net::RawIP->new({
 
 $pkt->optset(
                 tcp => {
-                    type => [ 2 ],
-                    data => [ $mss ]
+                    type => [ 2, 4 ],	# set MSS and SACK
+                    data => [ $mss, pack('C', 0x02) ],
                 }
             );
 print "[+] sending packet...\n";
-$pkt->send();
+$pkt->send( );              # send one packet without delay
 print "[+] finished!\n";
 exit 0;
 
