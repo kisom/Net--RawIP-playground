@@ -31,12 +31,37 @@ my $syn_pkt = Net::RawIP->new({
 
 $syn_pkt->optset(
                 tcp => {
-                    type => [ 2, 4, 8 ],	# set MSS and SACK
+                    type => [ 2, 4, 8 ],	# set MSS, SACK, and TSV
                     data => [ $mss, '', pack('NN', (localtime(), 0)) ],
                 }
-            );
-print "[+] sending packet...\n";
-$syn_pkt->send( );              # send one packet without delay
+);
+
+print "[+] building ACK packet...\n";
+my $ack_pkt = Net::RawIP->new({
+                            ip => {
+                                saddr   => $src,
+                                daddr   => $dst
+                            },
+                            tcp => {
+                                source  => $sp,
+                                dest    => $dp,
+                                seq     => $seq + 2,
+                                ack     => 1,
+                                window  => 32792,
+                            }
+});
+$ack_pkt->optset(
+                tcp => {
+                    type => [2, 4, 8],
+                    data => [ $mss, '', pack('NN', (localtime(), 0))]
+                }
+);
+
+print "[+] sending SYN...\n";
+$syn_pkt->send( );
+
+print "[+] sending ACK...\n";
+$ack_pkt->send(0.1);
 print "[+] finished!\n";
 exit 0;
 
