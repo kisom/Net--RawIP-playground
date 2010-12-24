@@ -3,6 +3,7 @@
 use warnings;
 use strict;
 use Net::RawIP;
+use Time::localtime;
 
 my $src = $ARGV[0] or &usage();
 my $dst = $ARGV[1] or &usage();
@@ -27,8 +28,8 @@ my $pkt = Net::RawIP->new({
 
 $pkt->optset(
                 tcp => {
-                    type => [ 2, 4 ],	# set MSS and SACK
-                    data => [ $mss, pack('C', 0x02) ],
+                    type => [ 2, 4, 8 ],    # set MSS, SACK, and TSV
+                    data => [ $mss, '', pack('NN', (localtime(), 0)) ]
                 }
             );
 print "[+] sending packet...\n";
