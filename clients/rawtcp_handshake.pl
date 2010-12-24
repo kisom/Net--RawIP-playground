@@ -32,7 +32,7 @@ my $syn_pkt = Net::RawIP->new({
 $syn_pkt->optset(
                 tcp => {
                     type => [ 2, 4, 8 ],	# set MSS and SACK
-                    data => [ $mss, '\x00', pack('NN', localtime()) ],
+                    data => [ $mss, '\x00', pack('NN', (localtime(), 0)) ],
                 }
             );
 print "[+] sending packet...\n";
