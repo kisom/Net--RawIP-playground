@@ -39,8 +39,10 @@ my $server  = IO::Socket::INET->new(LocalPort => $PORT,
                                     Reuse     => 1,
                                     Listen    => 10 )
             or die "couldn't set up TCP server on port $PORT : $@\n";
-my $saddr   = getsockname( $server );
-print "saddr: $saddr\n";
+
+my ($addr, $port) = &get_ap($server);
+
+print "[+] listening on $addr:$port...\n";
 while (my ($client, $client_addr) = $server->accept()) {
     my ($port, $packed_ip) = sockaddr_in($client_addr);
     my $dq = inet_ntoa($packed_ip);
@@ -57,5 +59,9 @@ print "[+] finished!\n";
 exit 0;
 
 sub get_ap() {
-    
+    my $socket = shift(@_);
+    my $sockaddr = getsockname($socket);
+    my ($port, $addr) = sockaddr_in($sockaddr);
+    $addr = inet_ntoa( $addr );
+    return ($addr, $port);
 }
