@@ -45,15 +45,16 @@ my $ack_pkt = Net::RawIP->new({
                             tcp => {
                                 source  => $sp,
                                 dest    => $dp,
-                                seq     => $seq + 2,
+                                seq     => $seq + 1,
                                 ack     => 1,
+				psh	=> 1,
                                 window  => 32792,
                             }
 });
 $ack_pkt->optset(
                 tcp => {
                     type => [2, 4, 8],
-                    data => [ $mss, '', pack('NN', (localtime(), 0))]
+                    data => [ $mss, '', pack('NN', (localtime(), localtime()))]
                 }
 );
 
