@@ -17,7 +17,7 @@ my $sp  = int(rand(6000)) + 1024;
 my $dp  = 4141;
 my $mss = pack('n', 16396);
 my $syn_seq     = int(rand(2 ** 32) + 1) ;
-my $ack_seq     = 0;
+my $ack_seq     = undef ;
 
 
 # PCAP SETUP
@@ -70,7 +70,6 @@ my $ack_pkt = Net::RawIP->new({
                                 dest    => $dp,
                                 seq     => $syn_seq + 1,
                                 ack     => 1,
-				psh	=> 1,
                                 window  => 32792,
                             }
 });
@@ -81,16 +80,41 @@ $ack_pkt->optset(
                 }
 );
 
+print "[+] building data packet...\n";
+my $data_pkt = Net::RawIP->new({
+                            ip => {
+                                saddr   => $src,
+                                daddr   => $dst,
+                            },
+                            tcp => {
+                                source  => $sp,
+                                dest    => $dp,
+                                seq     => $syn_seq + 1,
+                                ack     => 1,
+                                psh     => 1,
+                                window  => 32792,
+                                data    => 'HIHI',
+                            }
+});
+$data_pkt->optset(
+            tcp => {
+                type => [2, 4],
+                data => [ $mss, '' ],
+            }
+);
+
 # set up pcap
+print "[+] opening capture...\n";
 $pcap = Net::Pcap::pcap_open_live($dev, $snaplen, 1, $timeout, \$err);
 if (Net::Pcap::compile($pcap, \$filter, $filter_str, 0, $mask)) {
     print "[!] error compiling capture filter!\n";
     exit 1;
 }
-Net::Pcap::pcap_setnonblock($pcap, 1, \$err);
-#print "got ack $ack_seq\n";
 
-while (! $ack_seq) {
+print "[+] setting pcap to nonblocking mode...\n";
+Net::Pcap::pcap_setnonblock($pcap, 1, \$err);
+
+while (!defined $ack_seq) {
     if (! $sent) {
         print "[+] sending SYN...\n";
         $syn_pkt->send( );
@@ -99,17 +123,30 @@ while (! $ack_seq) {
     Net::Pcap::pcap_dispatch($pcap, 1, \&load_ack_seq, '');
 }
 
-Net::Pcap::pcap_close($pcap);
 
 $ack_pkt->set({
     tcp => {
-        seq     => $syn_seq + 1,
-        ack_seq => $ack_seq + 1,
+        seq     => $ack_seq,
+        ack_seq => $syn_seq + 1,
+    }
+});
+
+$data_pkt->set({
+    tcp => {
+        seq     => $ack_seq,
+        ack_seq => $syn_seq,
     }
 });
 
 print "[+] sending ACK...\n";
 $ack_pkt->send();
+
+print "[+] sending data...\n";
+
+Net::Pcap::pcap_open_live($dev, $snaplen, 0, 0, \$err);
+
+print "[+] closing pcap...\n";
+Net::Pcap::pcap_close($pcap);
 print "[+] finished!\n";
 exit 0;
 
@@ -126,15 +163,24 @@ sub load_ack_seq {
 
     my $eth     = NetPacket::Ethernet->decode($pkt) ;
     my $ip      = NetPacket::IP->decode($eth->{data}) ;
-    my $tcp     = NetPacket::IP->decode($ip->{data}) ;
+    my $tcp     = NetPacket::TCP->decode($ip->{data}) ;
 
-    my $read_seq = $tcp->{seqnum} ;
-    print "SEQ: $read_seq\n";
-    if (defined $read_seq && $read_seq) {
-        if ($read_seq == $syn_seq + 1) {
+    if ($ip->{proto} != NetPacket::IP::IP_PROTO_TCP) {
+        print "[+] INFO: non-TCP packet spotted!\n";
+        return undef ;
+    }
+
+
+    my $synack_seq  = $tcp->{seqnum} ;
+    my $synack_ack  = $tcp->{acknum} ;
+    my $tcp_flags   = $tcp->{flags}  ;
+    print "[+] TCP packet - SEQ: $synack_seq FLAGS: $tcp_flags...\n";
+
+    if (defined $synack_seq && $synack_seq) {
+        if ($synack_seq == $syn_seq ) {
             print "[+] received ACK to our SYN...\n" ;
-            $ack_seq = $tcp->{acknum} ;
-            print "[+] ACK response has ACK number $ack_seq...\n";
+            $ack_seq = $syn_seq + 1;
+            print "[+] ACK response has ACK number $tcp->{acknum}...\n";
         }
         else {
             print "[+] ignoring TCP packet from $ip->{src_ip}";
