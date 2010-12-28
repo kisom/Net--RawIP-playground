@@ -5,7 +5,6 @@ use strict;
 use Net::RawIP;
 use NetPacket::Ethernet;
 use NetPacket::IP;
-use NetPacket::IPv6;
 use Net::Pcap;
 
 print "[+] device lookup... ";
@@ -40,21 +39,13 @@ exit 0;
 sub process_packet {
     my ($user_data, $header, $packet) = @_;
     my $eth = NetPacket::Ethernet->decode($packet);
-    my $ip  = NetPacket::IP->decode($eth);
-    my $ip6 = NetPacket::IPv6->decode($eth);
+    my $ip  = NetPacket::IP->decode($eth-{data});
 
     my $src_ip  = $ip->{src_ip} ;
     my $dst_ip  = $ip->{dest_ip} ;
     my $proto   = $ip->{proto};
 
-    my $src_ip6 = $ip6->{src_ip} ;
-    my $dst_ip6 = $ip6->{dest_ip} ;
-    my $next6   = $ip6->{nxt} ;
-
 
     print "[+] received IPv4 packet " .
           "src $src_ip dst $dst_ip proto $proto...\n";
-    print "[+] received IPv6 packet " .
-          "src $src_ip6 dst $dst_ip6 next $next6...\n";
-
 }
