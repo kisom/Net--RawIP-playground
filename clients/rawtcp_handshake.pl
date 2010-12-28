@@ -30,8 +30,8 @@ my $snaplen     = 1600 ;
 my $timeout     = 0;
 my $pcap        = '';
 my $sent        = 0;
-my ($net, $mask)= '';
-Net::Pcap::lookupnet($dev, \$net, \$mask, \$err);
+my ($net, $mask)= 0;
+Net::Pcap::pcap_lookupnet($dev, \$net, \$mask, \$err);
 printf "net: %x\tmask: %x\n", $net, $mask;
 
 
@@ -105,7 +105,7 @@ $data_pkt->optset(
 
 # set up pcap
 print "[+] opening capture...\n";
-$pcap = Net::Pcap::pcap_open_live($dev, $snaplen, 1, $timeout, \$err);
+$pcap = &Net::Pcap::pcap_open_live($dev, $snaplen, 1, $timeout, \$err);
 if (Net::Pcap::compile($pcap, \$filter, $filter_str, 0, $mask)) {
     print "[!] error compiling capture filter!\n";
     exit 1;
