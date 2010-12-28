@@ -39,7 +39,7 @@ exit 0;
 sub process_packet {
     my ($user_data, $header, $packet) = @_;
     my $eth = NetPacket::Ethernet->decode($packet);
-    my $ip  = NetPacket::IP->decode($eth-{data});
+    my $ip  = NetPacket::IP->decode($eth->{data});
 
     my $src_ip  = $ip->{src_ip} ;
     my $dst_ip  = $ip->{dest_ip} ;
