@@ -179,13 +179,17 @@ sub load_ack_seq {
     if (defined $synack_seq && $synack_seq) {
         if ($synack_seq == $syn_seq ) {
             print "[+] received ACK to our SYN...\n" ;
-            $ack_seq = $syn_seq + 1;
-            print "[+] ACK response has ACK number $tcp->{acknum}...\n";
+            $ack_seq = $synack_seq + 1;
+            print "[+] packet details:\n";
+	    print "\tin response to $syn_seq\n";
+	    print "\tSEQ: $synack_seq\n";
+	    print "\tACK: $synack_ack\n";
+	    print "\tFLAGS: $tcp_flags\n";
         }
         else {
             print "[+] ignoring TCP packet from $ip->{src_ip}";
             print ":$tcp->{src_port} to $ip->{dest_ip}";
-            print ":$tcp->{dest_port}...\n";
+            print ":$tcp->{dest_port} flags $tcp->{flags}...\n";
         }
     }
     else {
