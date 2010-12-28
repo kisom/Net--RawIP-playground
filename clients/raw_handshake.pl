@@ -30,6 +30,7 @@ use constant {
 
 # PACKET VALUES
 use constant {
+	ISN		=> int(rand(2 ** 32)),
 	PACKET_WINDOW	=> 16392,
 };
 
@@ -104,14 +105,14 @@ sub capinit ( ) {
 	}
 
 	print "[+] looking up $dev\'s network and netmask...\n";
-	pcap_lookupnet($dev, \$net, \$netmask, \$err);
+	lookupnet($dev, \$net, \$netmask, \$err);
 	if (defined $err) {
 		print "[!] error looking up network: $err...\n";
 		return undef;
 	}
 
 	print "[+] attempting to open live packet capture descriptor...\n";
-	$pcap	= pcap_open_live($dev, &main::SNAPLEN, &main::PROMISC_MODE,
+	$pcap	= open_live($dev, &main::SNAPLEN, &main::PROMISC_MODE,
 				 &main::TIMEOUT, \$err);
 	
 	if (!defined $pcap) {
@@ -122,7 +123,7 @@ sub capinit ( ) {
 	if (&main::NOBLOCK) {
 		print "[+] attempting to put capture descriptor in nonblocking";
 		print "mode...\n";
-		pcap_setnonblock($pcap, &main::NOBLOCK, \$err);
+		setnonblock($pcap, &main::NOBLOCK, \$err);
 		if (defined $err) {
 			print "[!] error setting capture descriptor to ";
 			print "nonblocking mode"
@@ -130,7 +131,7 @@ sub capinit ( ) {
 	}
 
 	print "[+] compiling capture filter...\n";
-	$err = pcap_compile($pcap, \$compiled, $filter, &main::OPTIMISE_FILTER,
+	$err = compile($pcap, \$compiled, $filter, &main::OPTIMISE_FILTER,
 			    $netmask);
 	
 	if ($err == -1) {
