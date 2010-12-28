@@ -120,7 +120,7 @@ sub capinit ( ) {
 		return undef;
 	}
 
-	if (&main::NOBLOCK) {
+	if (&main::NOBLOCK && defined &Net::Pcap::setnonblock) {
 		print "[+] attempting to put capture descriptor in nonblocking";
 		print "mode...\n";
 		setnonblock($pcap, &main::NOBLOCK, \$err);
@@ -144,7 +144,6 @@ sub capinit ( ) {
 
 # capdie - close the capture descriptor
 sub capdie {
-	package Net::Pcap;
 	my ($pcap) = @_ ;
-	close($pcap);
+	&Net::Pcap::close($pcap);
 }
