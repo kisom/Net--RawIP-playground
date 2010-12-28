@@ -94,7 +94,7 @@ sub capinit ( ) {
 	my $netmask	= undef ;		# device netmask
 
 	print "[+] looking up capture device... ";
-	my $dev		= pcap_lookupdev(\$err);# capture device	
+	my $dev		= lookupdev(\$err);# capture device	
 
 	if (defined $err) {
 		print "\n[!] error getting device: $err...\n";
@@ -146,5 +146,5 @@ sub capinit ( ) {
 sub capdie {
 	package Net::Pcap;
 	my ($pcap) = @_ ;
-	pcap_close($pcap);
+	close($pcap);
 }
