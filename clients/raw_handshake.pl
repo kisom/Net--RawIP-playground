@@ -393,7 +393,15 @@ sub build_ack {
 	}
 	else {
 		print "[+] received SYNACK...\n";
-		print "[+] sleeping...\n";
+                print "[+] preparing ACK...\n";
+
+                my $ackpkt = &main::build_pkt(
+                                        $syn_src_ip, $syn_dst_ip, '', 
+                                        &main::PROTO_TCP,       # end iphdr
+                                        ($syn_src, $syn_dst, 
+                                         &main::TCP_FLAG_ACK,
+                                         1, $sa_seq + 1));      # end tcphdr
+                $ackpkt->send();
 	}
 	return undef;
 }
