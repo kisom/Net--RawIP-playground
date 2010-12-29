@@ -6,6 +6,7 @@
 ###################
 use warnings;
 use strict;
+use POSIX qw(asctime);
 use Net::RawIP;
 use Net::Pcap;
 use NetPacket::Ethernet;
@@ -66,19 +67,19 @@ my $dst = $ARGV[1] or &usage();
 my $dp	= $ARGV[2] or &usage();
 my $ack = 0;
 
-
-print "[+] getting packet capture descriptor...\n";
+print "[+] main: kick off handshake sequence at " . asctime(localtime(0)) ."\n";
+print "[+] main: getting packet capture descriptor...\n";
 my $pcap = &capinit('tcp port 4141');
 
 if (defined $pcap) {
-	print "[+] valid capture filter descriptor...\n";
+	print "[+] main: valid capture filter descriptor...\n";
 	#capdie($pcap);
 }
 else {
-	die "[!] cowardly refusing to blindly send packets!";
+	die "[!] main: cowardly refusing to blindly send packets!";
 }
 
-print "[+] building initial SYN packet...\n";
+print "[+] main: building initial SYN packet...\n";
 my @synpkt_params 	= ($sp, $dp, TCP_FLAG_SYN, 0, 0);
 my $synpkt		= build_pkt($src, $dst, '', PROTO_TCP, @synpkt_params);
 if (!defined $synpkt) {
@@ -92,12 +93,16 @@ print "[+] TORPEDOES IN THE WATER!\n";
 while (! $ack) {
 	&main::cap_wait_for_ack($pcap, $synpkt);
 };
-print "[!] ACK: $ack\n";
-my @dataparams	= ($sp, $dp, TCP_FLAG_PSH | TCP_FLAG_ACK | TCP_FLAG_FIN, 1, $ack + 1);
+print "[+] ACK: $ack\n";
+my @dataparams	= ($sp, $dp, TCP_FLAG_PSH | TCP_FLAG_ACK | TCP_FLAG_FIN, 1,
+		   $ack + 1);
 my $datapkt	= &build_pkt($src, $dst, 'HIHI', PROTO_TCP, @dataparams);
 $datapkt->send();
 
-
+print "[+] RST...\n";
+my @rstparams	= ($sp, $dp, TCP_FLAG_RST | TCP_FLAG_FIN, 2, $ack + 1);
+my $rstpkt	= &build_pkt($src, $dst, '', PROTO_TCP, @rstparams);
+$rstpkt->send();
 
 
 
@@ -122,9 +127,9 @@ sub capinit ( ) {
 	package Net::Pcap ;
 	my ($filter)	= @_ ;			# capture filter string
 	
-	print "[+] attempting to open capture descriptor";
+	print "[+] capinit: attempting to open capture descriptor...\n";
 	if (defined $filter) {
-		print " with filter '$filter'"
+		print "\tfilter '$filter'"
 	}
 	print "...\n";
 	
@@ -136,15 +141,16 @@ sub capinit ( ) {
 	my $dev		= undef ;		# device to capture on
 
 	if (defined &main::CAPTURE_IF) {
-		print "[+] will use " . &main::CAPTURE_IF . " for capture...\n";	
+		print "[+] capinit:  will use " . &main::CAPTURE_IF .
+		      " for capture...\n";	
 		$dev	= &main::CAPTURE_IF ;
 	}
 	else {
-		print "[+] looking up capture device... ";
+		print "[+] capinit: looking up capture device... ";
 		$dev	= lookupdev(\$err);	# capture device
 
 		if (defined $err) {
-			print "\n[!] error getting device: $err...\n";
+			print "\n[!] capinit: error getting device: $err...\n";
 			return undef;
 		}
 		else {
@@ -152,44 +158,46 @@ sub capinit ( ) {
 		}
 	}
 
-	print "[+] looking up $dev\'s network and netmask...\n";
+	print "[+] capinit: looking up $dev\'s network and netmask...\n";
 	lookupnet($dev, \$net, \$netmask, \$err);
 	if (defined $err) {
-		print "[!] error looking up network: $err...\n";
+		print "[!] capinit: error looking up network: $err...\n";
 		return undef;
 	}
 
-	print "[+] attempting to open live packet capture descriptor...\n";
+	print "[+] capinit: attempting to open live packet capture ";
+	print "descriptor...\n";
 	$pcap	= open_live($dev, &main::SNAPLEN, &main::PROMISC_MODE,
 				 &main::TIMEOUT, \$err);
 	
 	if (!defined $pcap) {
-		print "[!] error opening packet capture descriptor - $err !\n";
+		print "[!] capinit: error opening packet capture descriptor - ";
+		print "$err !\n";
 		return undef;
 	}
 
 	if (&main::NOBLOCK && defined &Net::Pcap::setnonblock) {
-		print "[+] attempting to put capture descriptor in nonblocking";
-		print "mode...\n";
+		print "[+] capinit: attempting to put capture descriptor in ";
+		print "in nonblocking mode...\n";
 		setnonblock($pcap, &main::NOBLOCK, \$err);
 		if (defined $err) {
-			print "[!] error setting capture descriptor to ";
-			print "nonblocking mode"
+			print "[!] capinit: error setting capture descriptor ";
+			print "to nonblocking mode"
 		}
 	}
 
-	print "[+] compiling capture filter...\n";
+	print "[+] capinit: compiling capture filter...\n";
 	$err = compile($pcap, \$compiled, $filter, &main::OPTIMISE_FILTER,
 			    $netmask);
 	
 	if ($err == -1) {
-		print "[!] error compiling capture filter!\n";
+		print "[!] capinit: error compiling capture filter!\n";
 	}
 	else {
 		setfilter($pcap, $compiled);
 	}
 
-	print "[+] successfully set up packet capture descriptor!\n";
+	print "[+] capinit: successfully set up packet capture descriptor!\n";
 	return $pcap
 }
 
@@ -199,7 +207,7 @@ sub cap_wait_for_ack {
 	my ($pcap, $synpkt) = @_ ;
 
 
-	print "[+] dispatch...\n";
+	print "[+] listening for SYNACK...\n";
 	my $pkts_seen = loop($pcap, 1, \&main::build_ack, $synpkt) ;
 	undef ($pcap);
 	
@@ -219,7 +227,7 @@ sub capdie {
 # fire - send a packet
 #	arguments: appropriate arguments for build_pkt or a prebuilt packet
 sub fire {
-	print "[+] received command to fire!\n";
+	print "[+] fire: received command to fire!\n";
 	my ($build, @process)	= @_ ;
 	
 	my $pkt 		= undef ;		# packet to send
@@ -228,16 +236,16 @@ sub fire {
 							# send
 	if (! $build) {
 		($delay, $count, $pkt) = @process;
-		print "[+] using prebuilt packet, delay $delay ";
+		print "[+] fire: using prebuilt packet, delay $delay ";
 		print "count $count...\n";
 	}
 	else {
 		my ($delay, $count, @build_data) = @process;
-		print "[+] building packet...\n";
+		print "[+] fire: building packet...\n";
 		$pkt = &build_pkt(@build_data);
 	}
 	
-	print "[+] sending...\t";
+	print "[+] fire: sending...\t";
 	$pkt->send($delay, $count);
 	print "sent!\n";
 }
@@ -317,7 +325,7 @@ sub build_pkt_tcp {
 		},
 	});
 
-	print "[+] built new TCP packet: \n";
+	print "[+] build_pkt_tcp: built new TCP packet: \n";
 	print "\tsaddr: $src_ip\n";
 	print "\tdaddr: $dst_ip\n";
 	print "\tIPID: $ipid\n";
@@ -349,9 +357,11 @@ sub build_pkt_udp {
 	return $pkt ;
 }
 
+# builds an ACK in response to a SYNACK. realistically, the bulk of this should
+# go into a generic packet processor.
 sub build_ack {
 	my ($synpkt, $header, $packet) = @_ ;
-	print "[+] packet on the wire!\n";
+	print "[+] build_ack: packet on the wire!\n";
 	
 	my $syn	= $synpkt->get({
 		ip  => [ qw(daddr saddr)],
@@ -401,23 +411,22 @@ sub build_ack {
 	if ($sa_flags & &main::TCP_FLAG_PSH) { print "\t\tpsh\n"; }
 	if ($sa_flags & &main::TCP_FLAG_ACK) { print "\t\tack\n"; }
 	if ($sa_flags & &main::TCP_FLAG_URG) { print "\t\turg\n"; }
-	print "\tpayload: '$sa_data'\n";
+	if ($sa_data) { print "\tpayload: '$sa_data'\n"; }
 	
 	my $ackset 	= undef ;
 	if (($sa_flags & &main::TCP_FLAG_ACK) and
 	    ($sa_flags & &main::TCP_FLAG_SYN)) {
 		$ackset = 1;
-		print "[+] SYNACK received!\n"
 	}
 	
 	if ( (!$ack_match == $sa_acknum)  or (!$sa_src_ip == $syn_dst_ip) or
 	     (!$sa_dst_ip == $syn_src_ip) or (!$sa_dst == $syn_src) or
 	     (!$sa_src == $syn_dst) 	  or (!$ackset)) {
-		print "[+] rejected packet! \n";
+		print "[+] build_ack: rejected packet! \n";
 	}
 	else {
-		print "[+] received SYNACK...\n";
-                print "[+] preparing ACK...\n";
+		print "[+] build_ack: received SYNACK...\n";
+                print "[+] build_ack: preparing ACK...\n";
 
                 my $ackpkt = &main::build_pkt(
                                         $syn_src_ip, $syn_dst_ip, '', 
@@ -425,9 +434,9 @@ sub build_ack {
                                         ($syn_src, $syn_dst, 
                                          &main::TCP_FLAG_ACK,
                                          1, $sa_seq + 1));      # end tcphdr
-		print "[+] sending...\n";
+		print "[+] build_ack: sending...\n";
                 $ackpkt->send;
 		$ack = $sa_seq;
 	}
-	print "[+] return from buildack...\n"
+	print "[+] build_ack: return from buildack...\n"
 }
