@@ -49,7 +49,7 @@ use constant {
 	USER_DATA	=> '',
 	NOBLOCK		=> 0,
 	OPTIMISE_FILTER => 0,
-	CAPTURE_IF	=> 'athn0',
+	CAPTURE_IF	=> 'eth0',
 };
 
 
@@ -64,6 +64,7 @@ my $src = $ARGV[0] or &usage();
 my $sp	= int(rand(2 ** 16 - 1024)) + 1024;
 my $dst = $ARGV[1] or &usage();
 my $dp	= $ARGV[2] or &usage();
+my $ack = 0;
 
 
 print "[+] getting packet capture descriptor...\n";
@@ -88,9 +89,13 @@ print "[+] FIRE TORPEDOES!\n";
 &fire(0, 0, 0, $synpkt);
 print "[+] TORPEDOES IN THE WATER!\n";
 
-while (1) {
+while (! $ack) {
 	&main::cap_wait_for_ack($pcap, $synpkt);
-}
+};
+print "[!] ACK: $ack\n";
+my @dataparams	= ($sp, $dp, TCP_FLAG_PSH | TCP_FLAG_ACK | TCP_FLAG_FIN, 1, $ack + 1);
+my $datapkt	= &build_pkt($src, $dst, 'HIHI', PROTO_TCP, @dataparams);
+$datapkt->send();
 
 
 
@@ -192,11 +197,10 @@ sub cap_wait_for_ack {
 	package Net::Pcap;
 	
 	my ($pcap, $synpkt) = @_ ;
-	#my $synack		   = undef;
 
 
 	print "[+] dispatch...\n";
-	my $pkts_seen = loop($pcap, 0, \&main::build_ack, $synpkt) ;
+	my $pkts_seen = loop($pcap, 1, \&main::build_ack, $synpkt) ;
 	undef ($pcap);
 	
 }
@@ -282,7 +286,7 @@ sub build_pkt_tcp {
 	my ($src_ip, $dst_ip, $ipid, $packet_data, $src_port,
 	    $dst_port, $flags, $pnum, $ackseq) = @_ ;
 	
-	my ($fin, $syn, $rst, $psh, $ack, $urg) = 0;
+	my ($fin, $syn, $rst, $psh, $urg) = 0;
 	if ($flags & TCP_FLAG_FIN) { $fin = 1; }
 	if ($flags & TCP_FLAG_SYN) { $syn = 1; }
 	if ($flags & TCP_FLAG_RST) { $rst = 1; }
@@ -320,7 +324,8 @@ sub build_pkt_tcp {
 	print "\tsrc: $src_port\n";
 	print "\tdst: $dst_port\n";
 	print "\tSEQ: " . (ISN + $pnum) . "\n";
-	print "\tflags: $flags\n";
+	print "\tACK: " . $ackseq . "\n";
+	printf "\tflags: 0x%x\n", $flags;
 	
 	return $pkt;
 }
@@ -348,11 +353,28 @@ sub build_ack {
 	my ($synpkt, $header, $packet) = @_ ;
 	print "[+] packet on the wire!\n";
 	
-	my ($syn_dst_ip, $syn_src_ip, $syn_dst, $syn_src,
-	    $syn_seq, $syn_acknum, $syn_flags) = $synpkt->get({
+	my $syn	= $synpkt->get({
 		ip  => [ qw(daddr saddr)],
 		tcp => [ qw(dest source seq ack_seq flags)],	
 	});
+	
+	my $syn_dst_ip 	= $syn->{daddr};
+	my $syn_src_ip 	= $syn->{saddr};
+	my $syn_dst	= $syn->{dest};
+	my $syn_src	= $syn->{source};
+	my $syn_seq	= $syn->{seq};
+	my $syn_acknum	= $syn->{ack_seq};
+	my $syn_control	= $synpkt->get({
+		tcp => [ qw(fin syn rst psh ack urg)],
+	});
+	
+	my $syn_flags	= 0;
+	if (defined $syn_control->{fin}) { $syn_flags += &main::TCP_FLAG_FIN; }
+	if (defined $syn_control->{syn}) { $syn_flags += &main::TCP_FLAG_SYN; }
+	if (defined $syn_control->{rst}) { $syn_flags += &main::TCP_FLAG_RST; }
+	if (defined $syn_control->{psh}) { $syn_flags += &main::TCP_FLAG_PSH; }
+	if (defined $syn_control->{ack}) { $syn_flags += &main::TCP_FLAG_ACK; }
+	if (defined $syn_control->{urg}) { $syn_flags += &main::TCP_FLAG_URG; }
 	
 	
 	my $synack_eth 	= NetPacket::Ethernet->decode($packet);
@@ -366,6 +388,7 @@ sub build_ack {
 	my $sa_seq	= $synack->{seqnum};
 	my $sa_acknum	= $synack->{acknum};
 	my $sa_flags	= $synack->{flags};
+	my $sa_data	= $synack->{data};
 	my $ack_match	= $syn_seq + 1;
 
 	print "\tfrom $sa_src_ip\:$sa_src to $sa_dst_ip\:$sa_dst\n";
@@ -378,7 +401,8 @@ sub build_ack {
 	if ($sa_flags & &main::TCP_FLAG_PSH) { print "\t\tpsh\n"; }
 	if ($sa_flags & &main::TCP_FLAG_ACK) { print "\t\tack\n"; }
 	if ($sa_flags & &main::TCP_FLAG_URG) { print "\t\turg\n"; }
-
+	print "\tpayload: '$sa_data'\n";
+	
 	my $ackset 	= undef ;
 	if (($sa_flags & &main::TCP_FLAG_ACK) and
 	    ($sa_flags & &main::TCP_FLAG_SYN)) {
@@ -389,7 +413,7 @@ sub build_ack {
 	if ( (!$ack_match == $sa_acknum)  or (!$sa_src_ip == $syn_dst_ip) or
 	     (!$sa_dst_ip == $syn_src_ip) or (!$sa_dst == $syn_src) or
 	     (!$sa_src == $syn_dst) 	  or (!$ackset)) {
-		print "[+] rejected packet: \n";
+		print "[+] rejected packet! \n";
 	}
 	else {
 		print "[+] received SYNACK...\n";
@@ -401,7 +425,9 @@ sub build_ack {
                                         ($syn_src, $syn_dst, 
                                          &main::TCP_FLAG_ACK,
                                          1, $sa_seq + 1));      # end tcphdr
-                $ackpkt->send();
+		print "[+] sending...\n";
+                $ackpkt->send;
+		$ack = $sa_seq;
 	}
-	return undef;
+	print "[+] return from buildack...\n"
 }
