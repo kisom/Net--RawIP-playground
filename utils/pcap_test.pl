@@ -6,6 +6,7 @@ use Net::RawIP;
 use NetPacket::Ethernet;
 use NetPacket::IP;
 use Net::Pcap;
+use Time::localtime;
 
 print "[+] device lookup... ";
 my $err = '';

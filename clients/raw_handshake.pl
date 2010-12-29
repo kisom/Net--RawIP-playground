@@ -12,7 +12,7 @@ use Net::Pcap;
 use NetPacket::Ethernet;
 use NetPacket::IP;
 use NetPacket::TCP;
-use Time::localtime;
+use POSIX qw( strftime );
 
 ###############################################################################
 #############
@@ -67,7 +67,7 @@ my $dst = $ARGV[1] or &usage();
 my $dp	= $ARGV[2] or &usage();
 my $ack = 0;
 
-my $time = localtime(0);
+my $time = strftime "%a %b %e %H:%M:%S %Y", localtime;
 print "[+] main: kick off handshake sequence at $time...\n";
 print "[+] main: getting packet capture descriptor...\n";
 my $pcap = &capinit('tcp port 4141');
