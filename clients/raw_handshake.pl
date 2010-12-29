@@ -67,7 +67,8 @@ my $dst = $ARGV[1] or &usage();
 my $dp	= $ARGV[2] or &usage();
 my $ack = 0;
 
-print "[+] main: kick off handshake sequence at " . asctime(localtime(0)) ."\n";
+my $time = localtime(0);
+print "[+] main: kick off handshake sequence at $time...\n";
 print "[+] main: getting packet capture descriptor...\n";
 my $pcap = &capinit('tcp port 4141');
 
