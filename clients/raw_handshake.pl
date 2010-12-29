@@ -48,9 +48,9 @@ use constant {
 	PROMISC_MODE	=> 0,
 	TIMEOUT		=> 0,
 	USER_DATA	=> '',
-	NOBLOCK		=> 1,
+	NOBLOCK		=> 0,
 	OPTIMISE_FILTER => 0,
-	CAPTURE_IF	=> 'eth0',
+	CAPTURE_IF	=> 'lo',
 };
 
 
@@ -72,7 +72,7 @@ my $pcap = &capinit('tcp port 4141');
 
 if (defined $pcap) {
 	print "[+] valid capture filter descriptor...\n";
-	capdie($pcap);
+	#capdie($pcap);
 }
 else {
 	die "[!] cowardly refusing to blindly send packets!";
@@ -90,7 +90,7 @@ print "[+] FIRE TORPEDOES!\n";
 print "[+] TORPEDOES IN THE WATER!\n";
 
 while (1) {
-	&cap_wait_for_ack($pcap, $synpkt);
+	&main::cap_wait_for_ack($pcap, $synpkt);
 }
 
 
@@ -181,6 +181,9 @@ sub capinit ( ) {
 	if ($err == -1) {
 		print "[!] error compiling capture filter!\n";
 	}
+	else {
+		setfilter($pcap, $compiled);
+	}
 
 	print "[+] successfully set up packet capture descriptor!\n";
 	return $pcap
@@ -192,8 +195,10 @@ sub cap_wait_for_ack {
 	my ($pcap, $synpkt) = @_ ;
 	#my $synack		   = undef;
 
+
 	print "[+] dispatch...\n";
-	my $pkts_seen = loop($pcap, 0, \&build_ack, '') ;
+	my $pkts_seen = loop($pcap, 0, \&main::build_ack, $synpkt) ;
+	undef ($pcap);
 	
 }
 
@@ -341,42 +346,55 @@ sub build_pkt_udp {
 }
 
 sub build_ack {
-	print "[+] packet on the wire!\n";
 	my ($synpkt, $header, $packet) = @_ ;
+	print "[+] packet on the wire!\n";
 	
-	my $isn = $synpkt->get({ tcp => "seq" });
 	my ($syn_dst_ip, $syn_src_ip, $syn_dst, $syn_src,
 	    $syn_seq, $syn_acknum, $syn_flags) = $synpkt->get({
 		ip  => [ qw(daddr saddr)],
-		tcp => [ qw(dest source seq ackseq flags)],	
+		tcp => [ qw(dest source seq ack_seq flags)],	
 	});
 	
-	my $synack = NetPacket::TCP->decode(ip_strip(eth_strip($packet)));
-	my $sa_ip  = NetPacket::IP->decode(eth_strip($packet));
+	
+	my $synack_eth 	= NetPacket::Ethernet->decode($packet);
+	my $sa_ip  	= NetPacket::IP->decode($synack_eth->{data});
+	my $synack 	= NetPacket::TCP->decode($sa_ip->{data});
 	my $sa_src_ip 	=  $sa_ip->{src_ip};
 	my $sa_dst_ip 	=  $sa_ip->{dest_ip};
-	my $sa_ipid	=  $sa_ip->{ip};
+	my $sa_ipid	=  $sa_ip->{id};
 	my $sa_src    	= $synack->{src_port};
 	my $sa_dst	= $synack->{dest_port};
 	my $sa_seq	= $synack->{seqnum};
 	my $sa_acknum	= $synack->{acknum};
 	my $sa_flags	= $synack->{flags};
-	
-	if ( (!$syn_seq == $sa_acknum)    or (!$sa_src_ip == $syn_dst_ip) or
-	     (!$sa_dst_ip == $syn_src_ip) or (!$sa_dst == $syn_src) or
-	     (!$sa_src == $syn_dst)) {
-		print "[+] rejected packet: \n";
-		print "\tfrom $sa_src_ip\:$sa_src to $sa_dst_ip\:$sa_dst\n";
-		print "\tIPID $sa_ipid\n";
-		print "\tSEQ: $sa_seq\t\tACK: $sa_acknum\n";
-		print "\tflags: \n";
-		if ($sa_flags & &main::TCP_FLAGS_FIN) { print "\t\tfin\n"; }
-		if ($sa_flags & &main::TCP_FLAGS_SYN) { print "\t\tsyn\n"; }
-		if ($sa_flags & &main::TCP_FLAGS_RST) { print "\t\trst\n"; }
-		if ($sa_flags & &main::TCP_FLAGS_PSH) { print "\t\tpsh\n"; }
-		if ($sa_flags & &main::TCP_FLAGS_ACK) { print "\t\tack\n"; }
-		if ($sa_flags & &main::TCP_FLAGS_URG) { print "\t\turg\n"; }
+	my $ack_match	= $syn_seq + 1;
+
+	print "\tfrom $sa_src_ip\:$sa_src to $sa_dst_ip\:$sa_dst\n";
+	print "\tIPID $sa_ipid\n";
+	print "\tSEQ: $sa_seq\t\tACK: $sa_acknum\n";
+	print "\tflags: \n";
+	if ($sa_flags & &main::TCP_FLAG_FIN) { print "\t\tfin\n"; }
+	if ($sa_flags & &main::TCP_FLAG_SYN) { print "\t\tsyn\n"; }
+	if ($sa_flags & &main::TCP_FLAG_RST) { print "\t\trst\n"; }
+	if ($sa_flags & &main::TCP_FLAG_PSH) { print "\t\tpsh\n"; }
+	if ($sa_flags & &main::TCP_FLAG_ACK) { print "\t\tack\n"; }
+	if ($sa_flags & &main::TCP_FLAG_URG) { print "\t\turg\n"; }
+
+	my $ackset 	= undef ;
+	if (($sa_flags & &main::TCP_FLAG_ACK) and
+	    ($sa_flags & &main::TCP_FLAG_SYN)) {
+		$ackset = 1;
+		print "[+] SYNACK received!\n"
 	}
 	
+	if ( (!$ack_match == $sa_acknum)  or (!$sa_src_ip == $syn_dst_ip) or
+	     (!$sa_dst_ip == $syn_src_ip) or (!$sa_dst == $syn_src) or
+	     (!$sa_src == $syn_dst) 	  or (!$ackset)) {
+		print "[+] rejected packet: \n";
+	}
+	else {
+		print "[+] received SYNACK...\n";
+		print "[+] sleeping...\n";
+	}
 	return undef;
 }
