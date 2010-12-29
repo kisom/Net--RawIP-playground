@@ -62,8 +62,8 @@ use constant {
 
 # PACKET SETUP
 my $src = $ARGV[0] or &usage();
-my $sp	= $ARGV[1] or &usage();
-my $dst = int(rand(2 ** 16 - 1024)) + 1024;
+my $sp	= int(rand(2 ** 16 - 1024)) + 1024;
+my $dst = $ARGV[1] or &usage();
 my $dp	= $ARGV[2] or &usage();
 
 
@@ -85,13 +85,13 @@ if (!defined $synpkt) {
 	die "[!] error building initial SYN packet!";
 }
 
+print "[+] FIRE TORPEDOES!\n";
+&fire(0, 0, 0, $synpkt);
+print "[+] TORPEDOES IN THE WATER!\n";
 
-
-
-
-
-
-
+while (1) {
+	&cap_wait_for_ack($pcap, $synpkt);
+}
 
 
 
@@ -186,6 +186,18 @@ sub capinit ( ) {
 	return $pcap
 }
 
+sub cap_wait_for_ack {
+	package Net::Pcap;
+	
+	my ($pcap, $synpkt) = @_ ;
+	#my $synack		   = undef;
+
+	print "[+] dispatch...\n";
+	my $pkts_seen = loop($pcap, 0, \&build_ack, '') ;
+	
+}
+
+
 # capdie - close the capture descriptor
 sub capdie {
 	my ($pcap) = @_ ;
@@ -206,11 +218,10 @@ sub fire {
 	my ($delay, $count)	= 0;			# delay before sending,
 							# number of packets to
 							# send
-	
-	if ($build) {
-		my ($delay, $count, $pkt) = @process;
-		print "[+] using prebuilt packet...\n";
-		($pkt) = @_ ;
+	if (! $build) {
+		($delay, $count, $pkt) = @process;
+		print "[+] using prebuilt packet, delay $delay ";
+		print "count $count...\n";
 	}
 	else {
 		my ($delay, $count, @build_data) = @process;
@@ -253,7 +264,7 @@ sub build_pkt {
 	else {
 		# FAIL
 	}
-	
+
 	return $pkt;
 	
 }
@@ -297,6 +308,15 @@ sub build_pkt_tcp {
 			data	=> $packet_data,
 		},
 	});
+
+	print "[+] built new TCP packet: \n";
+	print "\tsaddr: $src_ip\n";
+	print "\tdaddr: $dst_ip\n";
+	print "\tIPID: $ipid\n";
+	print "\tsrc: $src_port\n";
+	print "\tdst: $dst_port\n";
+	print "\tSEQ: " . (ISN + $pnum) . "\n";
+	print "\tflags: $flags\n";
 	
 	return $pkt;
 }
@@ -318,4 +338,45 @@ sub build_pkt_udp {
 	});
 	
 	return $pkt ;
+}
+
+sub build_ack {
+	print "[+] packet on the wire!\n";
+	my ($synpkt, $header, $packet) = @_ ;
+	
+	my $isn = $synpkt->get({ tcp => "seq" });
+	my ($syn_dst_ip, $syn_src_ip, $syn_dst, $syn_src,
+	    $syn_seq, $syn_acknum, $syn_flags) = $synpkt->get({
+		ip  => [ qw(daddr saddr)],
+		tcp => [ qw(dest source seq ackseq flags)],	
+	});
+	
+	my $synack = NetPacket::TCP->decode(ip_strip(eth_strip($packet)));
+	my $sa_ip  = NetPacket::IP->decode(eth_strip($packet));
+	my $sa_src_ip 	=  $sa_ip->{src_ip};
+	my $sa_dst_ip 	=  $sa_ip->{dest_ip};
+	my $sa_ipid	=  $sa_ip->{ip};
+	my $sa_src    	= $synack->{src_port};
+	my $sa_dst	= $synack->{dest_port};
+	my $sa_seq	= $synack->{seqnum};
+	my $sa_acknum	= $synack->{acknum};
+	my $sa_flags	= $synack->{flags};
+	
+	if ( (!$syn_seq == $sa_acknum)    or (!$sa_src_ip == $syn_dst_ip) or
+	     (!$sa_dst_ip == $syn_src_ip) or (!$sa_dst == $syn_src) or
+	     (!$sa_src == $syn_dst)) {
+		print "[+] rejected packet: \n";
+		print "\tfrom $sa_src_ip\:$sa_src to $sa_dst_ip\:$sa_dst\n";
+		print "\tIPID $sa_ipid\n";
+		print "\tSEQ: $sa_seq\t\tACK: $sa_acknum\n";
+		print "\tflags: \n";
+		if ($sa_flags & &main::TCP_FLAGS_FIN) { print "\t\tfin\n"; }
+		if ($sa_flags & &main::TCP_FLAGS_SYN) { print "\t\tsyn\n"; }
+		if ($sa_flags & &main::TCP_FLAGS_RST) { print "\t\trst\n"; }
+		if ($sa_flags & &main::TCP_FLAGS_PSH) { print "\t\tpsh\n"; }
+		if ($sa_flags & &main::TCP_FLAGS_ACK) { print "\t\tack\n"; }
+		if ($sa_flags & &main::TCP_FLAGS_URG) { print "\t\turg\n"; }
+	}
+	
+	return undef;
 }
