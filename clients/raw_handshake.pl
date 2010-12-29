@@ -6,7 +6,6 @@
 ###################
 use warnings;
 use strict;
-use Data::Dumper;
 use Net::RawIP;
 use Net::Pcap;
 use NetPacket::Ethernet;
@@ -20,9 +19,9 @@ use Time::localtime;
 #############
 # IP protos
 use constant {
-	PROTO_TCP	=> 0x00,
-	PROTO_UDP	=> 0x01,
-	PROTO_ICMP	=> 0x02,
+	PROTO_TCP	=> 0x06,
+	PROTO_UDP	=> 0x11,
+	PROTO_ICMP	=> 0x01,
 };
 
 # TCP FLAGS
@@ -50,7 +49,7 @@ use constant {
 	USER_DATA	=> '',
 	NOBLOCK		=> 0,
 	OPTIMISE_FILTER => 0,
-	CAPTURE_IF	=> 'lo',
+	CAPTURE_IF	=> 'athn0',
 };
 
 
